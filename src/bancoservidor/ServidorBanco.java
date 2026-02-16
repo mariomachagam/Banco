@@ -21,7 +21,7 @@ public class ServidorBanco {
         // Gestor de clientes compartido por todos los hilos
         GestorClientes gestorClientes = new GestorClientes();
 
-        try (ServerSocket serverSocket = new ServerSocket(PUERTO)) {
+        try (ServerSocket serverSocket = new ServerSocket(6000)) {
 
             System.out.println("Servidor escuchando en el puerto " + PUERTO);
 

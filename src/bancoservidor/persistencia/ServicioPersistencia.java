@@ -7,16 +7,12 @@ public class ServicioPersistencia {
 
     private static ClienteDAO clienteDAO = new ClienteDAO();
 
-    public static boolean registrarUsuario(String nombre, String usuario, String password) {
-        return clienteDAO.añadirUsuario(nombre, usuario, password);
+    public static boolean registrarUsuario(String user, String password, double saldo) {
+        return clienteDAO.añadirUsuario(user, password, saldo);
     }
 
     public static boolean validarLogin(String usuario, String password) {
         return clienteDAO.validarCredenciales(usuario, password);
-    }
-
-    public static boolean registrarCuenta(String usuario, CuentaBancaria cuenta) {
-        return clienteDAO.añadirCuenta(usuario, cuenta);
     }
 
     public static CuentaBancaria getCuenta(String usuario) {
@@ -29,5 +25,10 @@ public class ServicioPersistencia {
 
     public static List<String> obtenerUsuarios() {
         return clienteDAO.listarUsuarios();
+    }
+
+    // Si no usas registrarCuenta, puedes borrarlo o dejarlo así para que no falle el resto del código
+    public static boolean registrarCuenta(String usuario, CuentaBancaria cuenta) {
+        return true;
     }
 }

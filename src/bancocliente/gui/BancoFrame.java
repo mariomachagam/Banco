@@ -15,6 +15,8 @@ public class BancoFrame extends JFrame {
 
     private JLabel lblIban;
     private JLabel lblSaldo;
+    private JTextArea txtListaUsuarios; // Para el refresco automático
+    private Timer timerRefresco;
 
     public BancoFrame(Socket socket, BufferedReader in, PrintWriter out,
                       String iban, String saldo) {
@@ -24,50 +26,83 @@ public class BancoFrame extends JFrame {
         this.out = out;
 
         setTitle("Banco - Cliente");
-        setSize(450, 300);
+        setSize(600, 350); // Aumentamos un poco el ancho para la lista lateral
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         initComponentes(iban, saldo);
+        iniciarRefrescoAutomatico(); // Activamos el temporizador
 
         setVisible(true);
     }
 
     private void initComponentes(String iban, String saldo) {
+        JPanel panelPrincipal = new JPanel(new BorderLayout(10, 10));
+        panelPrincipal.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JPanel panel = new JPanel(new BorderLayout());
+        // --- PANEL CENTRAL (INFO Y BOTONES) ---
+        JPanel panelCentral = new JPanel(new BorderLayout(10, 10));
 
-        // --- PANEL SUPERIOR ---
         JPanel panelInfo = new JPanel(new GridLayout(2, 1));
         lblIban = new JLabel("IBAN: " + iban);
+        lblIban.setFont(new Font("Arial", Font.BOLD, 14));
         lblSaldo = new JLabel("Saldo: " + saldo);
+        lblSaldo.setForeground(new Color(0, 128, 0));
         panelInfo.add(lblIban);
         panelInfo.add(lblSaldo);
-        panel.add(panelInfo, BorderLayout.NORTH);
+        panelCentral.add(panelInfo, BorderLayout.NORTH);
 
-        // --- PANEL BOTONES ---
         JPanel panelBotones = new JPanel(new GridLayout(2, 3, 10, 10));
         JButton btnIngresar = new JButton("Ingresar");
         JButton btnRetirar = new JButton("Retirar");
-        JButton btnConsultar = new JButton("Consultar saldo");
+        JButton btnConsultar = new JButton("Consultar");
+        JButton btnUsuarios = new JButton("Refrescar Ya");
+        JButton btnCerrarSesion = new JButton("Cerrar Sesión");
         JButton btnSalir = new JButton("Salir");
-        JButton btnListarUsuarios = new JButton("Usuarios");
 
         panelBotones.add(btnIngresar);
         panelBotones.add(btnRetirar);
         panelBotones.add(btnConsultar);
+        panelBotones.add(btnUsuarios);
+        panelBotones.add(btnCerrarSesion);
         panelBotones.add(btnSalir);
-        panelBotones.add(btnListarUsuarios);
+        panelCentral.add(panelBotones, BorderLayout.CENTER);
 
-        panel.add(panelBotones, BorderLayout.CENTER);
-        add(panel);
+        // --- PANEL LATERAL (LISTA AUTOMÁTICA) ---
+        JPanel panelDerecho = new JPanel(new BorderLayout());
+        panelDerecho.setPreferredSize(new Dimension(150, 0));
+        panelDerecho.add(new JLabel("Usuarios Online:"), BorderLayout.NORTH);
+
+        txtListaUsuarios = new JTextArea();
+        txtListaUsuarios.setEditable(false);
+        txtListaUsuarios.setBackground(new Color(240, 240, 240));
+        panelDerecho.add(new JScrollPane(txtListaUsuarios), BorderLayout.CENTER);
+
+        panelPrincipal.add(panelCentral, BorderLayout.CENTER);
+        panelPrincipal.add(panelDerecho, BorderLayout.EAST);
+        add(panelPrincipal);
 
         // --- ACCIONES ---
         btnIngresar.addActionListener(e -> operar("I"));
         btnRetirar.addActionListener(e -> operar("R"));
         btnConsultar.addActionListener(e -> enviarComando("C"));
-        btnSalir.addActionListener(e -> cerrarSesion());
-        btnListarUsuarios.addActionListener(e -> listarUsuarios());
+        btnUsuarios.addActionListener(e -> listarUsuarios()); // Refresco manual si se desea
+        btnCerrarSesion.addActionListener(e -> cerrarSesionYVolver());
+        btnSalir.addActionListener(e -> salirCompletamente());
+    }
+
+    private void iniciarRefrescoAutomatico() {
+        // Cada 5 segundos actualiza la lista lateral
+        timerRefresco = new Timer(5000, e -> {
+            new Thread(() -> {
+                try {
+                    List<String> usuarios = bancoservidor.persistencia.ServicioPersistencia.obtenerUsuarios();
+                    String texto = String.join("\n", usuarios);
+                    SwingUtilities.invokeLater(() -> txtListaUsuarios.setText(texto));
+                } catch (Exception ignored) {}
+            }).start();
+        });
+        timerRefresco.start();
     }
 
     private void operar(String tipo) {
@@ -81,32 +116,40 @@ public class BancoFrame extends JFrame {
             try {
                 out.println(comando);
                 String respuesta = in.readLine();
-
                 if (respuesta.startsWith("SALDO")) {
                     SwingUtilities.invokeLater(() -> lblSaldo.setText(respuesta));
                 } else if ("SALDO_INSUFICIENTE".equals(respuesta)) {
-                    SwingUtilities.invokeLater(() ->
-                            JOptionPane.showMessageDialog(this, "Saldo insuficiente",
-                                    "Error", JOptionPane.ERROR_MESSAGE));
-                } else if ("FIN".equals(respuesta)) {
-                    SwingUtilities.invokeLater(this::dispose);
+                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, "Saldo insuficiente"));
                 }
-
             } catch (Exception e) {
-                SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(this, "Error de comunicación con el servidor",
-                                "Error", JOptionPane.ERROR_MESSAGE));
+                e.printStackTrace();
             }
         }).start();
     }
 
-
-    private void cerrarSesion() {
+    private void cerrarSesionYVolver() {
+        if (timerRefresco != null) timerRefresco.stop();
         try {
-            out.println("EXIT");
+            out.println("SALIR");
             socket.close();
         } catch (Exception ignored) {}
         dispose();
+        try {
+            Socket nuevoSocket = new Socket("localhost", 6000);
+            BufferedReader nuevoIn = new BufferedReader(new java.io.InputStreamReader(nuevoSocket.getInputStream()));
+            PrintWriter nuevoOut = new PrintWriter(nuevoSocket.getOutputStream(), true);
+            new LoginFrame(nuevoSocket, nuevoIn, nuevoOut);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void salirCompletamente() {
+        if (timerRefresco != null) timerRefresco.stop();
+        try {
+            out.println("SALIR");
+            socket.close();
+        } catch (Exception ignored) {}
         System.exit(0);
     }
 
@@ -114,17 +157,10 @@ public class BancoFrame extends JFrame {
         new Thread(() -> {
             try {
                 List<String> usuarios = bancoservidor.persistencia.ServicioPersistencia.obtenerUsuarios();
-                SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(this,
-                                String.join("\n", usuarios),
-                                "Usuarios en la BBDD",
-                                JOptionPane.INFORMATION_MESSAGE));
+                String texto = String.join("\n", usuarios);
+                SwingUtilities.invokeLater(() -> txtListaUsuarios.setText(texto));
             } catch (Exception ex) {
-                SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(this,
-                                "Error al obtener usuarios",
-                                "Error",
-                                JOptionPane.ERROR_MESSAGE));
+                ex.printStackTrace();
             }
         }).start();
     }

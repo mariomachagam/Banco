@@ -1,51 +1,30 @@
 package bancocliente;
 
+import bancocliente.gui.LoginFrame;
 import java.io.*;
 import java.net.Socket;
-import java.util.Scanner;
-import java.sql.Connection;
 
-
-/**
- * Cliente bancario que se conecta al servidor mediante TCP.
- * Permite enviar comandos y recibir respuestas.
- */
 public class ClienteBanco {
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        try {
+            // 1. Conexión al servidor
+            Socket socket = new Socket("localhost", 6000);
 
-        // Conexión al servidor
-        Socket socket = new Socket("localhost", 6000);
+            // 2. Creamos los flujos
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
 
-        BufferedReader in = new BufferedReader(
-                new InputStreamReader(socket.getInputStream()));
-        PrintWriter out = new PrintWriter(
-                socket.getOutputStream(), true);
+            // 3. LANZAMOS LA GUI (LoginFrame)
+            // IMPORTANTE: Pasamos los 3 parámetros que el nuevo constructor de LoginFrame exige
+            new LoginFrame(socket, in, out);
 
-        Scanner sc = new Scanner(System.in);
+            // NOTA: Hemos eliminado el Thread de consola y el Scanner.
+            // Ahora la ventana de Login tiene el control total.
 
-        // Hilo que escucha respuestas del servidor
-        new Thread(() -> {
-            try {
-                String respuesta;
-                while ((respuesta = in.readLine()) != null) {
-                    System.out.println("Servidor: " + respuesta);
-                }
-            } catch (IOException e) {
-                System.out.println("Conexión cerrada");
-            }
-        }).start();
-
-        // Envío de comandos al servidor
-        while (true) {
-            String comando = sc.nextLine();
-            out.println(comando);
-
-            if (comando.equalsIgnoreCase("SALIR")) {
-                break;
-            }
+        } catch (IOException e) {
+            System.err.println("No se pudo conectar con el servidor. Revisa que ServidorBanco esté corriendo.");
+            e.printStackTrace();
         }
-
-        socket.close();
     }
 }
