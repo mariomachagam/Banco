@@ -1,4 +1,8 @@
+//USARE ESTA CLAVE PARA IMPLEMENTAR SEGURIDAD EN LAS CONTRASEÑAS
+
 package bancoservidor.persistencia;
+
+
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

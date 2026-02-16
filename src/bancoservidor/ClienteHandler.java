@@ -1,114 +1,106 @@
 package bancoservidor;
 
 import bancoservidor.persistencia.ServicioPersistencia;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
 
 public class ClienteHandler implements Runnable {
     private Socket socket;
-    private GestorClientes gestorClientes;
+    private BufferedReader in;
+    private PrintWriter out;
+    private GestorClientes gestor;
 
-    public ClienteHandler(Socket socket, GestorClientes gestorClientes) {
+    public ClienteHandler(Socket socket, GestorClientes gestor) {
         this.socket = socket;
-        this.gestorClientes = gestorClientes;
+        this.gestor = gestor;
     }
 
     @Override
     public void run() {
-        try (Socket s = this.socket;
-             BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
-             PrintWriter out = new PrintWriter(s.getOutputStream(), true)) {
+        try {
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
 
-            // --- 1. PROTOCOLO INICIAL ---
-            out.println("OPCION (LOGIN/REGISTRO):");
-            String opcion = in.readLine();
-            if (opcion == null) return;
+            boolean continuar = true;
+            while (continuar) {
+                // 1. Enviamos invitación de opción
+                out.println("OPCION (LOGIN/REGISTRO/EXIT):");
+                String opcion = in.readLine();
 
-            // CASO REGISTRO: Solo pedimos user y password
-            if (opcion.equalsIgnoreCase("REGISTRO")) {
-                out.println("USUARIO:");
-                String user = in.readLine();
-                out.println("PASSWORD:");
-                String pass = in.readLine();
-
-                // CORRECCIÓN: Pasamos user, pass y el saldo inicial como double
-                out.println("SALDO:");
-                String saldoString = in.readLine(); // Recibe el String del cliente
-                double saldo = Double.parseDouble(saldoString); // Lo convierte a double
-                boolean registrado = ServicioPersistencia.registrarUsuario(user, pass, saldo);
-
-                if (registrado) {
-                    out.println("REGISTRO_OK");
-                } else {
-                    out.println("REGISTRO_ERROR");
+                if (opcion == null || opcion.equalsIgnoreCase("EXIT") || opcion.equalsIgnoreCase("SALIR")) {
+                    continuar = false;
+                    break;
                 }
-                return;
+
+                if (opcion.equalsIgnoreCase("REGISTRO")) {
+                    procesarRegistro();
+                    // Al terminar procesarRegistro, el bucle while vuelve arriba
+                    // y el cliente puede enviar "LOGIN" inmediatamente.
+                } else if (opcion.equalsIgnoreCase("LOGIN")) {
+                    procesarLogin();
+                    // Si el login tiene éxito, el hilo entrará en la gestión de operaciones
+                    // y luego morirá al salir el cliente.
+                    continuar = false;
+                }
             }
+        } catch (IOException e) {
+            System.err.println("Error en comunicación con cliente: " + e.getMessage());
+        } finally {
+            cerrarConexion();
+        }
+    }
 
-            // CASO LOGIN
-            out.println("USUARIO:");
-            String usuario = in.readLine();
-            out.println("PASSWORD:");
-            String password = in.readLine();
+    private void procesarRegistro() throws IOException {
+        out.println("USUARIO:");
+        String user = in.readLine();
+        out.println("PASSWORD:");
+        String pass = in.readLine();
+        out.println("SALDO:");
+        String saldoStr = in.readLine();
 
-            if (usuario == null || password == null || !ServicioPersistencia.validarLogin(usuario, password)) {
-                out.println("LOGIN_ERROR");
-                return;
+        try {
+            double saldo = Double.parseDouble(saldoStr);
+            boolean ok = ServicioPersistencia.registrarUsuario(user, pass, saldo);
+            if (ok) {
+                out.println("REGISTRO_OK");
+                System.out.println("Nuevo usuario registrado: " + user);
+            } else {
+                out.println("REGISTRO_ERROR");
             }
+        } catch (NumberFormatException e) {
+            out.println("REGISTRO_ERROR_FORMATO");
+        }
+    }
 
-            // Obtenemos la cuenta (que ahora solo tiene el saldo según tu tabla)
-            CuentaBancaria cuenta = ServicioPersistencia.getCuenta(usuario);
-            if (cuenta == null) {
-                out.println("ERROR_CUENTA");
-                return;
-            }
+    private void procesarLogin() throws IOException {
+        out.println("USUARIO:");
+        String user = in.readLine();
+        out.println("PASSWORD:");
+        String pass = in.readLine();
 
+        if (ServicioPersistencia.validarLogin(user, pass)) {
             out.println("LOGIN_OK");
-            // Enviamos un IBAN ficticio o vacío ya que tu tabla no tiene ese campo
-            out.println("IBAN " + usuario.toUpperCase() + "001");
+
+            // Enviamos datos iniciales al BancoFrame
+            CuentaBancaria cuenta = ServicioPersistencia.getCuenta(user);
+            out.println("IBAN " + cuenta.getIban());
             out.println("SALDO " + cuenta.getSaldo());
 
-            // --- 2. BUCLE DE OPERACIONES ---
-            String linea;
-            while ((linea = in.readLine()) != null) {
-                String[] partes = linea.split(" ");
-                String comando = partes[0].toUpperCase();
+            // --- BUCLE DE OPERACIONES BANCARIAS ---
+            // Una vez logueado, este hilo se queda aquí gestionando ingresos/retiradas
+            new OperacionBancaria(socket, in, out, user).gestionar();
 
-                switch (comando) {
-                    case "I": // INGRESAR
-                        if (partes.length > 1) {
-                            double monto = Double.parseDouble(partes[1]);
-                            cuenta.ingresar(monto);
-                            ServicioPersistencia.actualizarSaldo(usuario, cuenta.getSaldo());
-                            out.println("SALDO " + cuenta.getSaldo());
-                        }
-                        break;
-                    case "R": // RETIRAR
-                        if (partes.length > 1) {
-                            double monto = Double.parseDouble(partes[1]);
-                            if (cuenta.retirar(monto)) {
-                                ServicioPersistencia.actualizarSaldo(usuario, cuenta.getSaldo());
-                                out.println("SALDO " + cuenta.getSaldo());
-                            } else {
-                                out.println("SALDO_INSUFICIENTE");
-                            }
-                        }
-                        break;
-                    case "C": // CONSULTAR
-                        out.println("SALDO " + cuenta.getSaldo());
-                        break;
-                    case "SALIR":
-                        out.println("FIN");
-                        return;
-                    default:
-                        out.println("COMANDO_DESCONOCIDO");
-                        break;
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Error en ClienteHandler: " + e.getMessage());
+        } else {
+            out.println("LOGIN_ERROR");
+        }
+    }
+
+    private void cerrarConexion() {
+        try {
+            if (socket != null) socket.close();
+            System.out.println("Conexión cerrada con el cliente.");
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }

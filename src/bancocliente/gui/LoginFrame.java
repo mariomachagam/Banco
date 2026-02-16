@@ -108,48 +108,37 @@ public class LoginFrame extends JFrame {
             return;
         }
 
-        // Pedir el saldo solo para el registro mediante un JOptionPane
-        String saldoInicial = JOptionPane.showInputDialog(this, "Introduce el saldo inicial para la cuenta:");
-
-        if (saldoInicial == null || saldoInicial.isEmpty()) {
-            lblEstado.setText("Registro cancelado: falta saldo");
-            return;
-        }
+        String saldoInicial = JOptionPane.showInputDialog(this, "Introduce el saldo inicial:");
+        if (saldoInicial == null || saldoInicial.isEmpty()) return;
 
         new Thread(() -> {
             try {
-                // 1. Enviar Opción
-                in.readLine();
+                // Flujo de registro
+                in.readLine(); // "OPCION..."
                 out.println("REGISTRO");
-
-                // 2. Enviar Usuario
-                in.readLine();
+                in.readLine(); // "USUARIO:"
                 out.println(user);
-
-                // 3. Enviar Password
-                in.readLine();
+                in.readLine(); // "PASSWORD:"
                 out.println(pass);
-
-                // 4. Enviar Saldo (Nueva interacción con el Handler modificado)
-                in.readLine(); // Lee "SALDO:" enviado por el Handler
+                in.readLine(); // "SALDO:"
                 out.println(saldoInicial);
 
-                // 5. Leer resultado
                 String res = in.readLine();
 
                 if ("REGISTRO_OK".equals(res)) {
                     SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "¡Usuario " + user + " registrado con " + saldoInicial + "€!");
-                        txtUsuario.setText("");
-                        txtPassword.setText("");
-                        lblEstado.setText("Registrado correctamente");
+                        JOptionPane.showMessageDialog(this, "¡Registro éxito! Entrando al banco...");
+
+                        // --- LA CLAVE ESTÁ AQUÍ ---
+                        // En lugar de parar, llamamos directamente al login
+                        // para que el usuario entre sin tocar nada.
+                        hacerLogin();
                     });
                 } else {
                     SwingUtilities.invokeLater(() -> lblEstado.setText("Error: El usuario ya existe"));
                 }
             } catch (Exception ex) {
                 ex.printStackTrace();
-                SwingUtilities.invokeLater(() -> lblEstado.setText("Error de comunicación"));
             }
         }).start();
     }
